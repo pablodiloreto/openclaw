@@ -11,11 +11,13 @@ const routeReplyMock = vi.fn();
 const isRoutableChannelMock = vi.fn();
 
 let createFollowupRunner: typeof import("./followup-runner.js").createFollowupRunner;
+let clearRuntimeConfigSnapshot: typeof import("../../config/config.js").clearRuntimeConfigSnapshot;
 let loadSessionStore: typeof import("../../config/sessions/store.js").loadSessionStore;
 let saveSessionStore: typeof import("../../config/sessions/store.js").saveSessionStore;
 let clearFollowupQueue: typeof import("./queue.js").clearFollowupQueue;
 let enqueueFollowupRun: typeof import("./queue.js").enqueueFollowupRun;
 let sessionRunAccounting: typeof import("./session-run-accounting.js");
+let setRuntimeConfigSnapshot: typeof import("../../config/config.js").setRuntimeConfigSnapshot;
 let createMockFollowupRun: typeof import("./test-helpers.js").createMockFollowupRun;
 let createMockTypingController: typeof import("./test-helpers.js").createMockTypingController;
 const FOLLOWUP_DEBUG = process.env.OPENCLAW_DEBUG_FOLLOWUP_RUNNER_TEST === "1";
@@ -221,6 +223,7 @@ async function persistRunSessionUsageForFollowupTest(
 
 async function loadFreshFollowupRunnerModuleForTest() {
   vi.resetModules();
+  vi.doUnmock("../../config/config.js");
   vi.doMock(
     "../../agents/model-fallback.js",
     async () => await import("../../test-utils/model-fallback.mock.js"),
@@ -255,6 +258,8 @@ async function loadFreshFollowupRunnerModuleForTest() {
     routeReply: (...args: unknown[]) => routeReplyMock(...args),
   }));
   ({ createFollowupRunner } = await import("./followup-runner.js"));
+  ({ clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } =
+    await import("../../config/config.js"));
   ({ loadSessionStore, saveSessionStore } = await import("../../config/sessions/store.js"));
   ({ clearFollowupQueue, enqueueFollowupRun } = await import("./queue.js"));
   sessionRunAccounting = await import("./session-run-accounting.js");
@@ -273,6 +278,7 @@ const ROUTABLE_TEST_CHANNELS = new Set([
 
 beforeEach(async () => {
   await loadFreshFollowupRunnerModuleForTest();
+  clearRuntimeConfigSnapshot?.();
   runEmbeddedPiAgentMock.mockReset();
   compactEmbeddedPiSessionMock.mockReset();
   routeReplyMock.mockReset();
@@ -286,6 +292,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearRuntimeConfigSnapshot?.();
   clearFollowupQueue("main");
   FOLLOWUP_TEST_QUEUES.clear();
   vi.clearAllTimers();
@@ -342,6 +349,61 @@ function mockCompactionRun(params: {
 function createAsyncReplySpy() {
   return vi.fn(async () => {});
 }
+
+describe("createFollowupRunner runtime config", () => {
+  it("uses the active runtime snapshot for queued embedded followup runs", async () => {
+    const sourceConfig = {
+      models: {
+        providers: {
+          openai: {
+            apiKey: {
+              source: "env",
+              provider: "default",
+              id: "OPENAI_API_KEY",
+            },
+          },
+        },
+      },
+    };
+    const runtimeConfig = {
+      models: {
+        providers: {
+          openai: {
+            apiKey: "resolved-runtime-key",
+          },
+        },
+      },
+    };
+    setRuntimeConfigSnapshot(runtimeConfig, sourceConfig);
+    runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [],
+      meta: {},
+    });
+
+    const runner = createFollowupRunner({
+      typing: createMockTypingController(),
+      typingMode: "instant",
+      defaultModel: "openai/gpt-5.4",
+    });
+
+    await runner(
+      createQueuedRun({
+        run: {
+          config: sourceConfig,
+          provider: "openai",
+          model: "gpt-5.4",
+        },
+      }),
+    );
+
+    const call = runEmbeddedPiAgentMock.mock.calls.at(-1)?.[0] as
+      | {
+          config?: unknown;
+        }
+      | undefined;
+    expect(call?.config).toBe(runtimeConfig);
+  });
+});
 
 describe("createFollowupRunner compaction", () => {
   it("adds verbose auto-compaction notice and tracks count", async () => {

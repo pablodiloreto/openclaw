@@ -96,6 +96,7 @@ vi.mock("./agent-runner-utils.js", () => ({
       model: params.model,
     },
   }),
+  resolveQueuedReplyRuntimeConfig: <T>(config: T) => config,
   resolveModelFallbackOptions: vi.fn(() => ({})),
 }));
 
