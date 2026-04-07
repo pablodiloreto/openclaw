@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { FollowupRun, QueueSettings } from "./queue.js";
 
@@ -352,24 +353,28 @@ function createAsyncReplySpy() {
 
 describe("createFollowupRunner runtime config", () => {
   it("uses the active runtime snapshot for queued embedded followup runs", async () => {
-    const sourceConfig = {
+    const sourceConfig: OpenClawConfig = {
       models: {
         providers: {
           openai: {
+            baseUrl: "https://api.openai.com/v1",
             apiKey: {
               source: "env",
               provider: "default",
               id: "OPENAI_API_KEY",
             },
+            models: [],
           },
         },
       },
     };
-    const runtimeConfig = {
+    const runtimeConfig: OpenClawConfig = {
       models: {
         providers: {
           openai: {
+            baseUrl: "https://api.openai.com/v1",
             apiKey: "resolved-runtime-key",
+            models: [],
           },
         },
       },
